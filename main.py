@@ -1,5 +1,7 @@
 import pygame
 import sys
+from PIL import Image
+import math
 SCREEN_WIDTH=640
 SCREEN_HEIGHT=640
 pygame.init()
@@ -10,6 +12,24 @@ BLACK=(0,0,0)
 WHITE=(255,255,255)
 clock = pygame.time.Clock()
 
+class Vector:
+    def __init__(self,x=0,y=0):
+        self.x=x
+        self.y=y
+    def __add__(self, v):
+        return Vector(self.x+v.x, self.y+v.y)
+    def __sub__(self,v):
+        return Vector(self.x-v.x,self.y-v.y)
+    def __mul__(self, c):
+        return Vector(self.x*c,self.y*c)
+    def length(self):
+        return (self.x**2+self.y**2)**0.5
+    def normalize(self):
+        length=self.length()
+        self.x/=length
+        self.y/=length
+    def elements(self):
+        return (self.x,self.y)
 class Input_handler:
     def __init__(self):
         self.just_pressed={'a':False,'b':False,'c':False,'d':False,'e':False,'f':False,'g':False,'h':False,'i':False,'j':False,'k':False,'l':False,'m':False,'n':False,'o':False,'p':False,'q':False,'r':False,'s':False,'t':False,'u':False,'v':False,'w':False,'x':False,'y':False,'z':False}
@@ -151,43 +171,95 @@ class Input_handler:
     def set_func(self, key, func):
         self.func[key]=lambda: func(key)
 
+
+class Ellipse:
+    def __init__(self,a=1,b=1,v=Vector(0,0)):
+        self.a=a
+        self.b=b
+        self.v=v
+    def meet_with_line(self, a,b,c,):
+        if b==0:
+            return -self.a<=x and x<=self.a
+        if abs((a*c/b**2-(1/self.a**2+a**2/b**2)*(c**2/b**2-1)-1)) > 1e-10:
+            return False
+
+class Polygon:
+    def __init__(self, points=[]):
+        self.points=points
+    def meet(self, polygon):
+
 class Object:
     def __init__(self,x=0,y=0,img_path="images\\img"):
+        self.Ellipse_type=type(Ellipse())
+        self.Polygon_type=type(Polygon())
         self.x=x
         self.y=y
         self.image=pygame.image.load(img_path)
         self.dy=[0,-1,0,1]
         self.dx=[1,0,-1,0]
     def move(self, dx,dy):
-        x+=dx
-        y+=dy
+        self.x+=dx
+        self.y+=dy
 
 class Tile:
-    def __init__(self, tile_set={}):
+    def __init__(self, tile_set={'black':'images/black.png'},base=None,tile_size=64):
+        self.tile_size=tile_size
         self.tile_set=tile_set
-        self.tile_size=64
+        if base is None:
+            for i in self.tile_set.keys():
+                base=i
+                break
+        self.base=base
+        for i in self.tile_set.keys():
+            self.normalize(i)
     def add_tile(self, name,image):
         self.tile_set[name]=image
+        self.normalize(name)
+    def normalize(self, name):
+        Image.open(self.tile_set[name]).resize((self.tile_size,self.tile_size)).save(self.tile_set[name])
+    def tile(self, name):
+        return pygame.image.load(self.tile_set[name])
+        
 class World:
-    def __init__(self,tile,world_size=[10000,10000],window_size=(640,640),background=BLACK,camera=[0,0]):
+    def __init__(self,tileset=Tile(),world_size=[10000,10000],window_size=(640,640),background=BLACK,camera=[0,0]):
         self.screen = pygame.display.set_mode(window_size)
         self.xrange=[-world_size[0]/2,world_size[0]/2]
         self.yrange=[-world_size[1]/2,world_size[1]/2]
-        self.obj=[]
-        self.maps=[[0]*world_size[0] for i in range(world_size[1])]
-        self.tile_size=tile.tile_size
-        self.tile=tile
+        self.obj={}
+        self.maps=[[tileset.base]*world_size[0] for i in range(world_size[1])]
+        self.tile_size=tileset.tile_size
+        self.tileset=tileset
         self.camera=camera
-    def add_obj(self,obj):
-        self.obj.append(obj)
+        self.backgrond=background
+        self.window_size=window_size
+        self.input_handler=Input_handler()
+    def add_obj(self,id,obj):
+        self.obj[id]=obj
         return len(self.obj)
     def loop(self):
+        self.input_handler.act()
+        self.screen.fill(self.backgrond)
         xwindow=[self.camera[0]-self.window_size[0]/2,self.camera[0]+self.window_size[0]/2]
         ywindow=[self.camera[1]-self.window_size[1]/2,self.camera[1]+self.window_size[1]/2]
+        xindex=[math.floor(xwindow[i]/self.tile_size) for i in range(2)]
+        yindex=[math.floor(ywindow[i]/self.tile_size) for i in range(2)]
 
-        for i in self.obj:
-            
+        for i in range(yindex[0],yindex[1]+1):
+            for j in range(xindex[0],xindex[1]+1):
+                loc=Vector(i,j)
+                loc=loc*self.tile_size
+                loc=loc-Vector(xwindow[0],ywindow[0])
+                self.screen.blit(self.tileset.tile(self.maps[i][j]), loc.elements())
+        for i in self.obj.keys():
+            self.obj[i]
+        pygame.display.update()
 
+    def update(self,event):
+        if event.type == pygame.KEYDOWN:
+            self.input_handler.update_pygame(event.key)
+        if event.type== pygame.KEYUP:
+            self.input_handler.update_pygame_up(event.key)
+    
     def min(a,b):
         if a<b:
             return a
@@ -201,48 +273,32 @@ class World:
     def minmax_y(self,a):
         return min(max(self.yrange[0],a),self.yrange[1])
 
-class Vector:
-    def __init__(self,x=0,y=0):
-        self.x=x
-        self.y=y        
-    def __add__(self, v):
-        self.x+=v.x
-        self.y+=v.y
-    def __sub__(self,v):
-        self.x-=v.x
-        self.y-=v.y
-    def __mul__(self, v):
-        return self.x*v.x-self.y*v.y
-    def length(self):
-        return (self.x**2+self.y**2)**0.5
-    def normalize(self):
-        length=self.length()
-        self.x/=length
-        self.y/=length
+
 
 
 x=0
-y=0
-dx=0
-dy=0
-v=10
-def move(key):
-    global dy
-    global dx
-    if key=='w':
-        dy-=v
-    if key=='a':
-        dx-=v
-    if key=='s':
-        dy+=v
-    if key=='d':
-        dx+=v
-input_handler = Input_handler()
-input_handler.set_func('w',move)
-input_handler.set_func('a',move)
-input_handler.set_func('s',move)
-input_handler.set_func('d',move)
+# y=0
+# dx=0
+# dy=0
+# v=10
+# def move(key):
+#     global dy
+#     global dx
+#     if key=='w':
+#         dy-=v
+#     if key=='a':
+#         dx-=v
+#     if key=='s':
+#         dy+=v
+#     if key=='d':
+#         dx+=v
+# input_handler = Input_handler()
 
+# input_handler.set_func('w',move)
+# input_handler.set_func('a',move)
+# input_handler.set_func('s',move)
+# input_handler.set_func('d',move)
+world=World()
 
 while running:
     clock.tick(60)
@@ -254,24 +310,11 @@ while running:
         if event.type == pygame.QUIT:
             running=False
             break
-        if event.type == pygame.KEYDOWN:
-            input_handler.update_pygame(event.key)
-        if event.type== pygame.KEYUP:
-            input_handler.update_pygame_up(event.key)
-    input_handler.update()
-    input_handler.act()
+        world.update(event)
+    world.loop()
+    # input_handler.update()
+    # input_handler.act()
     #sqrt(dx^2+dy^2)=v
     #dx^2+dy^2=v^2
     #
-    length=dx**2+dy**2
-    if length!=0:
-        length=length**0.5
-        dx=dx/length*v
-        dy=dy/length*v
-    y+=dy
-    x+=dx
-    x=minmax(x)
-    y=minmax(y)
-    print((dx**2+dy**2)**0.5)
-    dx=0
-    dy=0
+    
